@@ -1,0 +1,342 @@
+
+library(shiny)
+
+#For Maps
+library(leaflet)
+library(leaflet.extras)
+library(leaflet.extras2)
+library(magrittr)
+library(htmltools)
+library(htmlwidgets)
+#library(stringi)
+library(RColorBrewer)
+
+library(geometries)
+library(rapidjsonr)
+library(rcmdcheck)
+library(rversions)
+library(xopen)
+library(brew)
+
+#library(DT)
+library(ggplot2)
+#library(car)
+
+#library(tidyverse)
+
+library(lattice)
+
+library(dplyr)
+library(stats)
+library(base)
+library(dplyr, warn.conflicts = FALSE)
+
+
+
+
+#_______________________________________CSV for Table on landing page____________________________________________________________________
+
+#Reading CSV file for the table on the first tab
+WLC_Table <- read.csv("Largest Companies in the World_Table.csv", stringsAsFactors = FALSE)
+
+#_________________________________________Main CSV File__________________________________________________________________________________
+WLC <- read.csv("Largest Companies in the World.csv", stringsAsFactors = FALSE)
+#str(WLC)
+#str(WLC_Table)
+
+#Csv file to read in for tab 2 ie top 100 companies on the map
+WLC_Top100 <- read.csv("Largest Companies in the World - Top 100.csv", stringsAsFactors = FALSE)
+
+#labels for Main set
+labels <- sprintf('<b>%s</b>',
+                  WLC$Labels) %>%
+  lapply(function(x) HTML(x))
+
+WLC <- cbind(WLC, matrix(labels, ncol = 1, dimnames = list(c(), c('labels'))))
+#str(WLC)
+
+
+#________________________________________Adding labels to CSV File for Map_____________________________________________________________
+#Labels for Top 100
+labels_100 <- sprintf('<b>%s</b>',
+                      WLC_Top100$Labels) %>%
+  lapply(function(x) HTML(x))
+
+WLC_Top100 <- cbind(WLC_Top100, matrix(labels_100, ncol = 1, dimnames = list(c(), c('labels'))))
+#str(WLC_Top100)
+
+#_______________________________________Creating Variables for K Means Clustering______________________________________________________
+
+#variables for clustering 
+vars <- setdiff(names(select(WLC,-"Ã¯..Global.Rank",-"Company",-"Country",-"Continent",-"Latitude",-"Longitude",-"X",-"X.1",-"Labels",-"labels" )), "Worlds Largest Companies")
+
+
+
+
+
+
+
+
+ui <-  navbarPage("", 
+                  tabPanel(title = "Introduction to Dataset", 
+                           
+                           fluidRow(
+                             column(
+                               
+                               br(),
+                               p("My data set was taken from the Kaggle Website and contains The Wealthiest 2000 Corporations Globally by Annual Revenue. The original dataset contained 2000 rows of data pertaining to the 2000 top companies by annual revenue. There are ten variables, including the companies world ranking,company name, Sales ($billion), Assest ($billion), Profits ($billion), Market Value($billion), Country and the Continent. For my analysis I created three versions of the csv file and read in the information that I needed to explore the data from them. For my landing page table, I excluded the coordinates as they were not useful for exploration here. For the exploration of the companies in  the Map tab  I only wanted to look at the top 100 companies of the map and there is some useful information in the pop ups for each company.In the next paragraph I will exlain what a user can explore in each tab.  ",style="text-align:justify;color:black;background-color:cornflowerblue;padding:15px;border-radius:10px"),
+                               br(),
+                               
+                               p(strong("Introduction to Dataset Tab"), "- is my landing page and I use a table to give an overview of the dataset. Any variable can be filtered for exploration.", strong("Map Tab"), "- Here I created a map of the world to give the user a visual of where the top 100 companies are located.",strong("Analysis Tab"),"- Gives some summary statistics by Country and finally",strong("K Means Clutering Tab"), "- shows a simple K - means clustering techinique to group companies by their variables.",style="text-align:justify;color:black;background-color:cornflowerblue;padding:15px;border-radius:10px"),
+                               
+                               width=10),
+                             column(
+                               br(),
+                               br(),
+                               br(),
+                               p("For more information please check Kaggle",strong("The Wealthiest 2000 Corporations Globally by Annual Revenue"),"page by clicking",
+                                 br(),
+                                 #Link to website used
+                                 a(href="https://www.kaggle.com/rishidamarla/largest-2000-companies-in-the-world-by-revenue", "Here",target="_blank"),style="text-align:center;color:black"),
+                               
+                               width=2)),
+                           
+                           #----------------------------------------------------------------------------------------------------------------------------------     
+                           br(),
+                           hr(),        #symbol for dataset
+                           tags$style(".fa-database {color:cornflowerblue}"),
+                           # Creating the data table for my dataset
+                           h3(p(em("Dataset"),icon("database",lib = "font-awesome"),style="color:black;text-align:center")),
+                           fluidRow(column(DT::dataTableOutput("WLC_Table"),
+                                           width = 12)),
+                  ),
+                  
+                  
+                  #__________________________________________________ Map Tab________________________________________________________________  
+                  tabPanel("Map",
+                           strong("This map contains a small sample from my dataset, it shows the top 100 Companies by Annual Revenue, (click on a tag for some information on a company and zoom in as some cities have more than one company)"), 
+                           #Full screen used
+                           leafletOutput("map",height="1000px"),
+                           
+                           
+                  ),
+                  
+                  
+                  #______________________________________________________ Summary Analysis Tab -______________________________________________________________   
+                  tabPanel(title = "Summary Analysis",
+                           strong("On this tab a user can explore some summary statistics by Country and can also filter by Sales, Profits and Assets"),
+                           
+                           sidebarLayout(
+                             position = "right",
+                             sidebarPanel(h3("Inputs for histogram"), 
+                                          
+                                          #Styling for sliders
+                                          tags$style(HTML(".js-irs-0 .irs-single, .js-irs-0 .irs-bar-edge, .js-irs-0 .irs-bar {background: cornflowerblue}")),
+                                          tags$style(HTML(".js-irs-1 .irs-single, .js-irs-1 .irs-bar-edge, .js-irs-1 .irs-bar {background: cornflowerblue}")),
+                                          tags$style(HTML(".js-irs-2 .irs-single, .js-irs-2 .irs-bar-edge, .js-irs-2 .irs-bar {background: cornflowerblue}")),
+                                          
+                                          selectInput("CountryInput","Country", choices = sort(unique(WLC$Country)),selected = sort(unique(WLC$Country))[1]) , 
+                                          br(),
+                                          sliderInput("SalesInput", "Sales...billion. ", min = 0, max = 500,value = c(0, 500), pre = "$"),
+                                          br(),
+                                          sliderInput("ProfitsInput", "Profits...billion. ", min = 0, max = 500, value = c(0, 500), pre = "$"),
+                                          br(),
+                                          sliderInput("AssetsInput", "Assets...billion. ", min = 0, max = 500, value = c(0, 500), pre = "$")),
+                             mainPanel(
+                               plotOutput("myhist"),
+                               br(),
+                               br(),
+                               br(),
+                               fluidRow(
+                                 column(width = 2),
+                                 column(
+                                   strong("Sales Summary Stats (billions)"),
+                                   tableOutput("Sales"),
+                                   strong("Profits Summary (billions)"),
+                                   tableOutput("Profits"),width=3 ),
+                                 
+                                 column(width = 1),
+                                 
+                                 column(
+                                   strong("Assets Summary Stats (billions)"),
+                                   tableOutput("Assets"),
+                                   strong("Market Value Summary Stats (billions)"),
+                                   tableOutput("Market"),
+                                   width=3)
+                                 
+                               )
+                             )
+                           )),
+                  
+                  
+                  
+                  #___________________________________________________K Means Clustering tab _____________________________________________________________
+                  tabPanel(title = "K-Means Clustering",
+                           
+                           pageWithSidebar(
+                             headerPanel('World Largest Companies k-means clustering'),
+                             sidebarPanel(
+                               #First input of variables already created
+                               selectInput('xcol', 'X Variable', vars),
+                               #Second input of variables already created
+                               selectInput('ycol', 'Y Variable', vars, selected = vars[[2]]),
+                               #defines number of cluesters user wants to see
+                               numericInput('clusters', 'Cluster count', 3, min = 1, max = 9)
+                             ),
+                             mainPanel(
+                               plotOutput('plot1')
+                             )
+                           ) ) 
+                  
+                  
+                  
+                  
+                  
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+server <-function(input, output) {
+  
+  #________________________________________________________Landing Page Table________________________________________________________
+  
+  output$WLC_Table <- DT::renderDataTable(
+    DT::datatable({
+      WLC_Table
+    },
+    # Creates menu length , default is 10 rows
+    options = list(lengthMenu=list(c(5,15,20),c('5','15','20')),pageLength=10,
+                   initComplete = JS(
+                     #colour and styling
+                     "function(settings, json) {",
+                     "$(this.api().table().header()).css({'background-color': 'cornflowerblue', 'color': '1c1b1b'});",
+                     "}"),
+                   columnDefs=list(list(className='dt-center',targets="_all"))
+                   #Table Filters 
+    ),
+    filter = "top",
+    selection = 'multiple',
+    style = 'bootstrap',
+    class = 'cell-border stripe',
+    rownames = FALSE,
+    colnames = c("Global Ranking","Company Name","Sales ($billion)","Profits ($billion)","Assets ($billion)","Market Value ($billion)","Country","Continent")
+    ))
+  
+  selectedData <- reactive({
+    WLC_Table[, c(input$xcol, input$ycol)]
+  })
+  #_________________________________________________Clusters Analysis tab____________________________________________________________________
+  clusters <- reactive({
+    kmeans(selectedData(), input$clusters)
+  })
+  output$plot1 <- renderPlot({
+    # Colour selection
+    palette(c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3",
+              "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999"))
+    
+    par(mar = c(5.1, 4.1, 0, 1))
+    plot(selectedData(),
+         col = clusters()$cluster,
+         pch = 20, cex = 3)
+    points(clusters()$centers, pch = 4, cex = 4, lwd = 4)
+  })
+  
+  
+  
+  #_______________________________________________Analysis tab___________________________________________________________________
+  
+  #Hist filters
+  output$myhist <- renderPlot({
+    filtered <- WLC %>%
+      filter(Sales...billion. >= input$SalesInput[1],
+             Sales...billion. <= input$SalesInput[2],
+             Profits...billion. >= input$ProfitsInput[1],
+             Profits...billion. <= input$ProfitsInput[2],
+             Assets...billion. >= input$AssetsInput[1],
+             Assets...billion. <= input$AssetsInput[2],
+             
+             Country == input$CountryInput, 
+      ) 
+    ggplot(filtered, aes(Market.Value...billion.)) +
+      geom_histogram(color="white", fill="cornflowerblue")
+  })
+  
+  #The filters for the four summary stats output tables ie Sales, Profits, Assest and Market Value 
+  output$Sales <- renderTable(tableVals <- WLC %>%
+                                filter(Country == input$CountryInput) %>%
+                                summarise("Mean" = mean(Sales...billion.), 
+                                          "Median" = median(Sales...billion.),
+                                          "STDEV" = sd(Sales...billion.), 
+                                          "Min" = min(Sales...billion.),
+                                          "Max" = max(Sales...billion.)))
+  
+  output$Profits <- renderTable(tableVals <- WLC %>%
+                                  filter(Country == input$CountryInput) %>%
+                                  summarise("Mean" = mean(Profits...billion.), 
+                                            "Median" = median(Profits...billion.),
+                                            "STDEV" = sd(Profits...billion.), 
+                                            "Min" = min(Profits...billion.),
+                                            "Max" = max(Profits...billion.)))
+  
+  output$Assets <- renderTable(tableVals <- WLC %>%
+                                 filter(Country == input$CountryInput) %>%
+                                 summarise("Mean" = mean(Assets...billion.), 
+                                           "Median" = median(Assets...billion.),
+                                           "STDEV" = sd(Assets...billion.), 
+                                           "Min" = min(Assets...billion.),
+                                           "Max" = max(Assets...billion.)))
+  
+  output$Market <- renderTable(tableVals <- WLC %>%
+                                 filter(Country == input$CountryInput) %>%
+                                 summarise("Mean" = mean(Market.Value...billion.), 
+                                           "Median" = median(Market.Value...billion.),
+                                           "STDEV" = sd(Market.Value...billion.), 
+                                           "Min" = min(Market.Value...billion.),
+                                           "Max" = max(Market.Value...billion.)))                               
+  
+  
+  
+  #________________________________________________Map tab________________________________________________________
+  #output of map
+  output$map   <- renderLeaflet({
+    leaflet() %>%
+      #Shows Country's
+      addProviderTiles(providers$CartoDB.Positron) %>%
+      #default position on map
+      setView(lat = 15, lng = 0, zoom = 2.5) %>%
+      #Code that reads cvs file and creates popups on the correct map position
+      addAwesomeMarkers(data = WLC_Top100,
+                        lng = ~Longitude,
+                        lat = ~Latitude,
+                        popup = ~labels_100)
+    
+  })
+  
+  
+  
+  
+  
+}
+
+
+
+
+
+
+shinyApp(ui = ui, server = server)
+
+
+
